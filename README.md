@@ -103,6 +103,17 @@ pip install -r requirements.txt
 
 ## 6. 快速开始
 
+### 6.0 先运行可扩展 Demo
+
+当前仓库提供一个不依赖模型权重的 Streamlit 演示后端，用于验证界面与“检测 → 矫正 → 识别”流水线。演示结果会明确标注为占位结果，不代表真实模型精度。
+
+```bash
+python -m pip install -r requirements.txt
+python scripts/run_demo.py
+```
+
+详细说明见 `docs/DEMO.md`。真实 YOLOv8、STN 和 LPRNet 后续可分别实现统一接口并注册到推理工厂，无需重写页面。
+
 ### 6.1 克隆仓库
 
 ```bash
@@ -158,7 +169,7 @@ python src/inference/pipeline.py --source demo.jpg
 ### 6.8 启动可视化界面
 
 ```bash
-python ui/app.py
+python scripts/run_demo.py
 ```
 
 ---

@@ -1,0 +1,15 @@
+[app]
+title = "PlateAlignNet Demo"
+backend = "demo"
+
+[inference]
+rectification = "affine"
+confidence_threshold = 0.25
+plate_width = 188
+plate_height = 48
+max_detections = 3
+
+[paths]
+detector_weights = "weights/yolov8_plate.pt"
+stn_weights = "weights/stn.pt"
+recognizer_weights = "weights/lprnet.pt"
