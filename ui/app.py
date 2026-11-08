@@ -22,7 +22,9 @@ st.markdown(
     """
     <style>
     .block-container {padding-top: 2rem; max-width: 1320px;}
-    [data-testid="stMetric"] {background: #111827; border: 1px solid #26354a; padding: 12px; border-radius: 12px;}
+    [data-testid="stMetric"] {background: #111827; border: 1px solid #26354a; padding: 9px 12px; border-radius: 12px; margin-bottom: 8px;}
+    [data-testid="stMetricLabel"] {font-size: 0.78rem;}
+    [data-testid="stMetricValue"] {font-size: 1.25rem; line-height: 1.35; overflow-wrap: anywhere;}
     .demo-badge {display:inline-block; padding:5px 10px; border-radius:999px; background:#4b3514; color:#ffd27a; font-size:13px;}
     </style>
     """,
@@ -86,7 +88,7 @@ with demo_tab:
         left, right = st.columns([1.55, 1], gap="large")
         with left:
             st.subheader("检测结果")
-            st.image(response.annotated_image or source_image, use_container_width=True)
+            st.image(response.annotated_image or source_image, width="stretch")
         with right:
             st.subheader("阶段结果")
             if response.status == InferenceStatus.ERROR:
@@ -95,15 +97,14 @@ with demo_tab:
                 st.warning(response.message)
             else:
                 plate = response.plates[0]
-                metric_a, metric_b, metric_c = st.columns(3)
-                metric_a.metric("车牌文本", plate.recognition.text)
-                metric_b.metric("检测置信度", f"{plate.detection.confidence:.0%}")
-                metric_c.metric("总耗时", f"{response.timing_ms['total']:.1f} ms")
+                st.metric("车牌文本", plate.recognition.text)
+                st.metric("检测置信度", f"{plate.detection.confidence:.0%}")
+                st.metric("总耗时", f"{response.timing_ms['total']:.1f} ms")
                 if plate.detection.is_fallback:
                     st.warning("未找到明显蓝/绿车牌区域，当前框为演示回退位置。")
                 before, after = st.columns(2)
-                before.image(plate.raw_plate, caption="原始车牌 ROI", use_container_width=True)
-                after.image(plate.rectified_plate, caption=f"矫正输出 · {mode_label}", use_container_width=True)
+                before.image(plate.raw_plate, caption="原始车牌 ROI", width="stretch")
+                after.image(plate.rectified_plate, caption=f"矫正输出 · {mode_label}", width="stretch")
                 st.caption(
                     f"检测 {response.timing_ms['detect']:.2f} ms · "
                     f"矫正 {plate.timing_ms['rectify']:.2f} ms · "
@@ -117,14 +118,14 @@ with demo_tab:
                 data=image_to_png(response.annotated_image),
                 file_name="platealignnet_result.png",
                 mime="image/png",
-                use_container_width=True,
+                width="stretch",
             )
             download_json.download_button(
                 "下载结构化结果",
                 data=json.dumps(response.to_dict(), ensure_ascii=False, indent=2),
                 file_name="platealignnet_result.json",
                 mime="application/json",
-                use_container_width=True,
+                width="stretch",
             )
 
 with architecture_tab:
