@@ -1,0 +1,1 @@
+"""Model definitions: detector adapter, STN, LPRNet."""
