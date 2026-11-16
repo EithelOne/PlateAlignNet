@@ -1,0 +1,18 @@
+{
+  "root": "data/CCPD2019_base",
+  "total_samples": 2557,
+  "total_issues": 0,
+  "by_subset": {
+    "base": 2557
+  },
+  "by_split": {
+    "test": 246,
+    "train": 2066,
+    "val": 245
+  },
+  "by_plate_length": {
+    "7": 2557
+  },
+  "sample_file": "data/ccpd_manifest_base/samples.jsonl",
+  "issue_file": "data/ccpd_manifest_base/issues.jsonl"
+}

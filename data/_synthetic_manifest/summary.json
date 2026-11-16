@@ -1,0 +1,19 @@
+{
+  "root": "synthetic",
+  "total_samples": 30,
+  "total_issues": 0,
+  "by_subset": {
+    "synthetic": 30
+  },
+  "by_split": {
+    "test": 5,
+    "train": 22,
+    "val": 3
+  },
+  "by_plate_length": {
+    "7": 22,
+    "8": 8
+  },
+  "sample_file": "data/_synthetic_manifest/samples.jsonl",
+  "issue_file": "data/_synthetic_manifest/issues.jsonl"
+}

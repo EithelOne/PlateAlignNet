@@ -5,5 +5,4 @@ __pycache__/
 .venv/
 outputs/
 weights/
-data/
-CCPD2019_base/
+data/CCPD2019_base/
