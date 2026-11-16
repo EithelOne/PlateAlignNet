@@ -1,13 +1,13 @@
 # PlateAlignNet
 
-> **牌正识**：基于 STN 矫正与端到端免分割识别的中文车牌识别系统
-> YOLOv8 Detection · STN Rectification · LPRNet Recognition · CCPD Benchmark
+> **牌正识**：面向中文车牌的检测—矫正—识别课程项目
+> 目标架构：YOLOv8 Detection · STN Rectification · LPRNet Recognition · CCPD Benchmark
 
 ---
 
 ## 1. 项目简介
 
-PlateAlignNet 是一个面向中文车牌的端到端识别系统，采用 **"检测 → 矫正 → 识别"** 三阶段级联架构：
+PlateAlignNet 是一个面向中文车牌识别的课程项目，目标是构建 **"检测 → 矫正 → 识别"** 三阶段级联系统：
 
 - **检测**：YOLOv8n 在 CCPD2019 上完成车牌定位；
 - **矫正**：空间变换网络（STN）对倾斜、旋转车牌进行几何矫正；
@@ -19,18 +19,18 @@ PlateAlignNet 是一个面向中文车牌的端到端识别系统，采用 **"�
 
 ---
 
-## 2. 核心特性
+## 2. 当前实现
 
-- 中文蓝色车牌 + 新能源绿色车牌支持
-- STN 矫正模块可插拔，支持仿射 / 透视两种变换
-- 端到端联合训练与分阶段训练双模式
-- 在 CCPD-DB / Blur / FN / Rotate / Tilt / Challenge 六个挑战子集上细粒度评估
-- PyQt5 / Streamlit 可视化演示界面
-- 完整消融实验配置与复现脚本
+- Streamlit 单图演示界面，包含图片上传、内置样例、阶段结果和 JSON / 图片下载。
+- 推理流水线定义了检测、矫正、识别协议；当前工厂只注册 `demo-heuristic` 演示后端。检测使用颜色启发式，识别文本为占位结果，矫正只做尺寸归一化，不代表真实模型效果。
+- 已有 LPRNet、CTC 编解码及网络规格实现，但真实数据解析/数据集模块、完整训练评估流程、YOLOv8 检测器和 STN 模型尚未在当前仓库中提供或接入。
+- CCPD 蓝牌、新能源车牌和 STN 消融研究属于项目目标；当前演示不应据此宣称已支持真实识别或已完成相关实验。
 
 ---
 
-## 3. 技术架构
+## 3. 目标技术架构
+
+以下是项目设计目标，并非当前仓库已完整实现的模型链路：
 
 ```text
 输入图像
@@ -64,36 +64,34 @@ PlateAlignNet/
 ├── requirements.txt
 ├── .gitignore
 ├── LICENSE
-├── configs/                 # 超参数配置
-│   ├── yolov8_plate.yaml
-│   ├── lprnet.yaml
-│   └── stn.yaml
+├── 可写进报告或PPT中的思考和问题.md
+├── configs/
+│   └── demo.toml            # 演示界面与推理参数
 ├── src/
-│   ├── data/                # CCPD 解析与数据增强
-│   ├── models/              # detector / stn / lprnet
-│   ├── train/               # 训练脚本
-│   ├── eval/                # 评估脚本
-│   ├── inference/           # 推理管线
-│   └── utils/               # 日志、指标、可视化
-├── scripts/                 # 一键脚本
-├── docs/                    # 开题报告、技术方案、实验记录
-├── weights/                 # 本地权重（gitignore）
-├── outputs/                 # 训练日志与评估结果
-├── ui/                      # 可视化界面
-└── tests/                   # 单元测试
+│   ├── inference/            # 推理协议、演示组件、流水线与结果可视化
+│   ├── models/               # LPRNet 与网络规格
+│   ├── train/                # 识别器小样本过拟合检查入口
+│   └── utils/                # 车牌字符表与 CTC 编解码
+├── scripts/
+│   └── run_demo.py           # 启动 Streamlit 演示
+├── ui/
+│   └── app.py                # Streamlit 页面
+├── tests/                    # 单元测试
+└── docs/
+    ├── DEMO.md               # 演示说明与分阶段验收清单
+    ├── 过程性文件/            # 界面模板调研报告
+    └── 提交报告/              # 开题报告、进展报告及模板
 ```
+
+数据集、模型权重和运行输出应放在本地 `data/`、`weights/`、`outputs/` 目录；这些目录已由 `.gitignore` 排除，不随仓库提交。注意：当前版本没有 `src/data/` 实现，不能据目录名或测试文件推断 CCPD 解析及训练链路已可运行。
 
 ---
 
 ## 5. 环境依赖
 
-- Python ≥ 3.9
-- PyTorch ≥ 2.0（CUDA 11.8 推荐）
-- Ultralytics ≥ 8.0
-- OpenCV、NumPy、Pillow、PyYAML、TensorBoard
-- PyQt5 或 Streamlit（界面演示）
+演示后端依赖 Python、NumPy、Pillow 和 Streamlit，版本范围见 `requirements.txt`。当前训练入口及 LPRNet 实现还依赖 PyTorch，但 PyTorch 未列入演示依赖文件；YOLOv8、STN 所需依赖也尚未纳入当前可运行流程。
 
-安装依赖：
+安装演示依赖：
 
 ```bash
 pip install -r requirements.txt
@@ -103,74 +101,36 @@ pip install -r requirements.txt
 
 ## 6. 快速开始
 
-### 6.0 先运行可扩展 Demo
+### 6.1 克隆仓库
 
-当前仓库提供一个不依赖模型权重的 Streamlit 演示后端，用于验证界面与“检测 → 矫正 → 识别”流水线。演示结果会明确标注为占位结果，不代表真实模型精度。
+```bash
+git clone https://github.com/your-team/PlateAlignNet.git
+cd PlateAlignNet
+```
+
+### 6.2 启动演示
+
+当前可运行入口是不依赖模型权重的 Streamlit 演示后端，用于体验界面和推理接口。演示结果会明确标注为占位结果，不代表真实模型精度。
 
 ```bash
 python -m pip install -r requirements.txt
 python scripts/run_demo.py
 ```
 
-详细说明见 `docs/DEMO.md`。真实 YOLOv8、STN 和 LPRNet 后续可分别实现统一接口并注册到推理工厂，无需重写页面。
+详细说明见 [`docs/DEMO.md`](docs/DEMO.md)。真实检测器、矫正器和识别器可按推理协议实现后注册到工厂。
 
-### 6.1 克隆仓库
+### 6.3 检查 LPRNet 结构（可选）
 
-```bash
-git clone https://github.com/your-team/PlateAlignNet.git
-```
+安装与本机环境匹配的 PyTorch 后，可运行网络规格检查和模型规格一致性检查：
 
 ```bash
-cd PlateAlignNet
+python -m src.models.lprnet_spec
+python -m src.models.lprnet
 ```
 
-### 6.2 数据准备
+这两项检查不等同于真实数据训练或识别评估。
 
-下载 CCPD2019 数据集并放置到 `data/CCPD2019/`，然后运行解析脚本转换为 YOLO 格式：
-
-```bash
-python src/data/ccpd_parser.py --root data/CCPD2019 --out data/ccpd_yolo
-```
-
-### 6.3 训练检测模型
-
-```bash
-python src/train/train_detector.py --config configs/yolov8_plate.yaml
-```
-
-### 6.4 训练识别模型
-
-```bash
-python src/train/train_recognizer.py --config configs/lprnet.yaml
-```
-
-### 6.5 端到端联合训练
-
-```bash
-python src/train/train_end2end.py --config configs/stn.yaml
-```
-
-### 6.6 评估
-
-```bash
-python src/eval/evaluate.py --split test --subset base
-```
-
-```bash
-python src/eval/evaluate.py --split test --subset tilt
-```
-
-### 6.7 推理演示
-
-```bash
-python src/inference/pipeline.py --source demo.jpg
-```
-
-### 6.8 启动可视化界面
-
-```bash
-python scripts/run_demo.py
-```
+当前仓库尚无可用的 CCPD 解析、检测训练、STN 训练、端到端训练或评估命令。`src/train/train_recognizer.py` 目前只提供小样本过拟合检查入口，并引用尚未提交的 `src.data` 模块；在该数据模块补齐前，此入口不可运行。不要将演示占位结果或模型结构自检当作实验结果。
 
 ---
 
@@ -284,29 +244,33 @@ git log --oneline --graph
 
 - `main` 分支保持可运行，不直接提交实验性代码；
 - 每位成员在自己的 `feature/xxx` 分支开发，完成后发起 Pull Request；
-- 提交前必须运行 `python -m pytest tests/` 确保基础测试通过；
+- 提交前应运行 `python -m pytest tests/`；当前仓库仍有测试引用缺失的 `src.data` 模块，测试尚不能作为全量通过的验收依据；
 - 权重文件、数据集、日志不进入 Git，已在 `.gitignore` 中忽略。
 
 ---
 
 ## 8. 文档索引
 
-|     文档     |          路径          |             说明             |
-| :----------: | :--------------------: | :--------------------------: |
-|   开题报告   |   `docs/开题报告.md`   |   研究背景、目标、技术路线   |
-|   技术方案   |   `docs/技术方案.md`   | 模型结构、训练策略、消融设计 |
-|   实验记录   |   `docs/实验记录.md`   |      各轮实验配置与结果      |
-| 挑战子集分析 | `docs/挑战子集分析.md` |   CCPD 六个子集细粒度结果    |
+|      文档      |                                                                路径                                                                | 说明                                                               |
+| :------------: | :--------------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------- |
+|    演示说明    |                                                   [`docs/DEMO.md`](docs/DEMO.md)                                                   | 当前演示实现、启动方法、接口扩展与验收清单                         |
+|    开题报告    |                                         `docs/提交报告/人工智能导论_开题报告.doc` / `.pdf`                                         | 课程项目开题材料                                                   |
+|    进展报告    |                    [`docs/提交报告/人工智能导论_进展报告.md`](docs/提交报告/人工智能导论_进展报告.md) / `.docx`                    | 项目任务、技术方案和实验方案；进展与待解决问题部分留待实际结果补充 |
+|    报告模板    |                                           `docs/提交报告/人工智能导论_进展报告模板.doc`                                            | 进展报告模板                                                       |
+|    调研报告    | [`docs/过程性文件/PyQt5_Streamlit车牌识别界面开源模板调研报告.md`](docs/过程性文件/PyQt5_Streamlit车牌识别界面开源模板调研报告.md) | PyQt5 / Streamlit 界面模板调研                                     |
+| 思考与问题记录 |                               [`可写进报告或PPT中的思考和问题.md`](可写进报告或PPT中的思考和问题.md)                               | 开发过程中的问题、技术思考及修改记录                               |
 
 ---
 
-## 9. 实验进度
+## 9. 当前状态
 
-|              阶段              |   时间   |  状态  |
-| :----------------------------: | :------: | :----: |
-|            开题报告            | 第 7 周  | 已完成 |
-| 进度检查（技术方案、实验方案） | 第 12 周 | 进行中 |
-|            项目汇报            | 第 16 周 | 待开始 |
+| 模块                                  | 当前状态                               |
+| :------------------------------------ | :------------------------------------- |
+| Streamlit 单图演示与统一推理接口      | 已实现，使用启发式/占位演示组件        |
+| 字符表、CTC 编解码、LPRNet 结构与模型 | 已实现基础代码；模型自检需安装 PyTorch |
+| CCPD 数据解析与识别数据集             | 当前仓库缺少 `src/data/` 实现          |
+| YOLOv8 检测器、真实 STN、模型推理适配 | 尚未接入                               |
+| 正式训练、统一评估与消融实验          | 尚未形成可运行完整流程或实验结果       |
 
 ---
 
