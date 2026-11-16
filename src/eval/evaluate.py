@@ -94,22 +94,27 @@ def evaluate_dataset(
         "by_length": dict(sorted(by_length.items())),
         "num_failures": len(failures),
         "failures": failures[:max_failures],
+        "predictions": predictions,
+        "texts": truths,
     }
 
 def format_table(rows: Sequence[dict[str, object]]) -> str:
-    """把一行或多行结果排成 Markdown 表（可直接贴进报告）。"""
+    """把一行或多行结果排成Markdown表"""
     header = (
-        "| 模式 | 参数量 | 样本数 | 整牌准确率 | CER | 单张耗时(ms) | 失败数 |\n"
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| 模式 | 参数量 | 样本数 | 整牌准确率 | CER | 单张耗时(ms) | STN回退 | 失败数 |\n"
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     )
     lines = [header]
     for row in rows:
         lines.append(
             f"| {row.get('mode', '-')} | {row.get('parameters', '-')} | {row.get('samples', '-')} "
             f"| {float(row.get('accuracy', 0.0)):.2%} | {float(row.get('cer', 0.0)):.4f} "
-            f"| {float(row.get('latency_ms', 0.0)):.2f} | {row.get('num_failures', '-')} |"
+            f"| {float(row.get('latency_ms', 0.0)):.2f} "
+            f"| {float(row.get('fallback', 0.0)):.2%} | {row.get('num_failures', '-')} |"
         )
     return "\n".join(lines)
+
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     """命令行入口：评估一个权重文件在指定划分上的表现。"""

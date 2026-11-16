@@ -208,8 +208,14 @@ def run_training(args: argparse.Namespace, device: torch.device) -> dict[str, ob
     val_set = PlateDataset.from_manifest(args.manifest, split="val", augment=False, **common)
     test_set = PlateDataset.from_manifest(args.manifest, split="test", augment=False, **common)
 
+   
     model = build_recognizer(args.mode, device)
-    if args.init is not None and Path(args.init).exists():
+    if args.init is not None:
+        if not Path(args.init).exists():
+            raise SystemExit(
+                f"找不到 --init 指定的权重：{args.init}\n"
+                f"请先跑过拟合检查生成它：--mode {args.mode} --overfit 24 --epochs 200 --lr 2e-3"
+            )
         loaded = torch.load(args.init, map_location=device, weights_only=False)
         model.load_state_dict(loaded["state_dict"])
         print(f"已从 {args.init} 加载权重继续训练（warm start）")

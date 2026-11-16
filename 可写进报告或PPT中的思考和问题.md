@@ -401,3 +401,22 @@ PlateDataset(size=188×48)  →  STN(mode)  →  LPRNet  →  CTC 损失 → 反
 | ④ affine 全量        | `... --mode affine --epochs 60 --lr 5e-4 --init outputs\end2end_affine_overfit.pt` | ~20 min |
 | ⑤ perspective 过拟合 | `... --mode perspective --overfit 24 --epochs 300 --lr 2e-3` | ~36 s   |
 | ⑥ perspective 全量   | `... --mode perspective --epochs 60 --lr 5e-4 --init outputs\end2end_perspective_overfit.pt` | ~22 min |
+
+# E1主表
+
+评估划分=test  样本数=246  设备=cpu
+
+[完成] off          准确率=90.65%  CER=0.0163  耗时=  0.27ms
+[完成] affine       准确率=92.68%  CER=0.0122  耗时=  0.62ms
+[完成] perspective  准确率= 1.22%  CER=0.7067  耗时=  0.63ms
+
+| 模式        | 参数量 | 样本数 | 整牌准确率 |    CER | 单张耗时(ms) | 失败数 |
+| ----------- | -----: | -----: | ---------: | -----: | -----------: | -----: |
+| off         | 107558 |    246 |     90.65% | 0.0163 |         0.27 |     23 |
+| affine      | 164364 |    246 |     92.68% | 0.0122 |         0.62 |     18 |
+| perspective | 164494 |    246 |      1.22% | 0.7067 |         0.63 |    243 |
+
+已写出：
+  E:\作业\人工智能\PlateAlignNet\outputs\ablation_e1.json
+  E:\作业\人工智能\PlateAlignNet\outputs\ablation_e1.csv
+  E:\作业\人工智能\PlateAlignNet\outputs\ablation_e1.md
