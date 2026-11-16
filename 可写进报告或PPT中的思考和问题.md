@@ -59,6 +59,10 @@ Batch（一个 batch 的三件套）→ S4 的 LPRNet
 
 ## S4a:先把网络“算清楚”再写代码
 
+
+
+
+
 LPRNet 要吃的是**一整块车牌**，输出的是**沿车牌宽度方向的一串字符概率**。你可以这样理解：
 
 - 车牌字符是**横着排**的 → 所以把图像的**宽度**当作"时间轴"，每个横向位置对应"这里可能是什么字符"
@@ -93,7 +97,75 @@ LPRNet 要吃的是**一整块车牌**，输出的是**沿车牌宽度方向的�
 | 没有算 FLOPs / 实测速度       | 报告 §3.4 要报"实际硬件条件下的速度"，那是训练跑起来之后实测填 |
 | 时间步与真实 pytorch 层需对齐 | S4b 写完后要跑一次 `trace` 对照测试，确保 `lprnet.py` 的 T 也是 23 |
 
+#### 测试1：只跑新模块
+
+```
+.\.venv\Scripts\python.exe -m unittest tests.test_lprnet_spec -v
+```
+
+预期：Ran 22 tests` + `OK
+
+#### 测试2：跑全量
+
+```
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+预期：Ran 79 tests ... OK
+
+#### 测试3：打印层表
+
+```
+.\.venv\Scripts\python.exe -m src.models.lprnet_spec --worst-case
+```
+
+预期输出：
+
+```
+输入: C=3 H=24 W=94
+conv1    conv  -> C=32   H=24  W=94  参数=960
+pool1    pool  -> C=32   H=12  W=47  参数=0
+conv2    conv  -> C=32   H=12  W=47  参数=9312
+conv3    conv  -> C=64   H=12  W=47  参数=18624
+pool2    pool  -> C=64   H=6   W=23  参数=0
+conv4    conv  -> C=64   H=6   W=23  参数=37056
+conv5    conv  -> C=64   H=6   W=23  参数=37056
+head     conv  -> C=70   H=6   W=23  参数=4550
+------------------------------------------------------------
+池化/卷积后特征图: C=70 H=6 W=23
+高度方向取平均后: (C=70, T=23)
+CTC 需要的 log_probs 形状: (T=23, N, C=70)
+总参数量: 107,558
+------------------------------------------------------------
+检查样本: ['京A12345', '粤AD12345', '京A112233', '粤A88888']
+装不下（需要更多时间步）的样本: 无
+最坏情况需要 11 个时间步，当前 T=23
+```
+
+
+
 ## S4b原理：CTC 损失到底在算什么
+
+先装torch：
+
+```
+cd E:\作业\人工智能\PlateAlignNet
+.\.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+国内下不动的话下镜像：
+
+```
+.\.venv\Scripts\python.exe -m pip install torch -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+验证：
+
+```
+.\.venv\Scripts\python.exe -c "import torch; print('torch', torch.__version__, '| cuda:', torch.cuda.is_available())"
+```
+
+预期：`torch 2.x.x+cpu | cuda: False`
 
 ### 理解：
 
@@ -174,3 +246,158 @@ OK  真值=吉W85124    预测=吉W85124
 
 **这也是我坚持"写完一小段就测一下"的价值**：我连续两版都把量级估错了，是**测试失败**把它逼出来的。
 
+#### 测试1：torch层测试
+
+```
+cd E:\作业\人工智能\PlateAlignNet
+.\.venv\Scripts\python.exe -m unittest tests.test_lprnet -v
+```
+
+预期：Ran 12 tests` + `OK
+
+
+
+#### 测试2：规格一致性
+
+```
+.\.venv\Scripts\python.exe -m src.models.lprnet
+```
+
+预期：
+
+expected_time_steps: 23
+actual_time_steps: 23
+expected_classes: 70
+actual_classes: 70
+expected_parameters: 107558
+actual_parameters: 107558
+consistent: True
+
+#### 测试3：跑全量
+
+```
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+#### 过拟合检查
+
+```
+.\.venv\Scripts\python.exe -m src.train.train_recognizer --manifest data\_synthetic_plates\samples.jsonl --image-root data\_synthetic_plates --overfit 20 --epochs 200
+```
+
+预期：
+
+```
+OK  真值=津J87647    预测=津J87647
+OK  真值=黑K11578P   预测=黑K11578P
+...
+最终损失=0.0123  整牌准确率=100.00%  用时=11.2s
+权重已保存：outputs/overfit_lprnet.pt
+结论：过拟合检查通过 ✅
+```
+
+
+
+
+
+
+
+## S5a STN
+
+这一步证明了"STN 结构对、能跑、安全"
+
+STN：
+
+| 零件                          | 干什么                                           | 我们的实现                                                   |
+| ----------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| **定位网络** LocalizationNet  | 看车牌图，判断"歪了多少度、该往哪挪"             | 3 层卷积(16/32/64) + 自适应池化 + 2 层全连接 → 输出 6 个或 8 个数字 |
+| **网格生成器** Grid Generator | 为**每个输出像素**算出"该去输入图的哪个位置取色" | 仿射用 `F.affine_grid`；透视手写公式                         |
+| **可微采样器** Sampler        | 按算出的坐标做双线性插值取像素                   | `F.grid_sample`                                              |
+
+**"可微"是 STN 的灵魂**：采样坐标对那 6/8 个数字可求导，所以 CTC 的损失能一路反传回去，让定位网络自己学会"怎么摆正对识别最有利"。这不是人工设计规则，是学出来的。
+
+
+
+
+
+## S5b要回答的问题
+
+给 STN 一张**故意转歪**的车牌，它能不能自己学出**反向变换**把它摆正？
+
+## 可写进报告的
+
+**STN 几何可学性自检（对应报告 §2.5 变换方向验证要求）**
+
+为排除"逆向采样方向写反"这类无法从损失曲线发现的问题，设计了几何自监督实验：用已知矩阵 θ 对端正车牌施加畸变得到输入，仅训练 STN 以像素重构损失还原原图，再检查学到的矩阵与 θ 的逆矩阵是否一致。四组案例结果如下：
+
+| 案例         | 施加           | 理论应学到     | 实际学到       | 角度误差 | MSE（前→后）  |
+| ------------ | -------------- | -------------- | -------------- | -------- | ------------- |
+| 旋转         | +12.00°        | −12.00°        | −11.77°        | 0.23°    | 0.396 → 0.069 |
+| 旋转+缩放    | −8.00°，0.900× | +8.00°，1.111× | +7.56°，1.104× | 0.44°    | 0.373 → 0.117 |
+| 平移         | (0.15, −0.05)  | ≈0°            | 0.03°          | 0.03°    | 0.383 → 0.252 |
+| 透视回补旋转 | +6.00°         | −6.00°         | −5.69°         | 0.31°    | 0.307 → 0.047 |
+
+结论：四组案例学到的变换均为施加矩阵的逆向（符号相反），角度误差均小于 0.5°，确认逆向采样方向实现正确，STN 具备通过损失学习几何矫正的能力。
+
+另需记录两点限制：① 重构误差存在下限，因为畸变会有一部分像素被移出画幅，该部分信息不可恢复，这与 STN 只能"重新组织现有像素"的性质一致；② 训练初期若不加梯度裁剪，位置参数会被推至极端值（实测缩放达 2809 倍、角度偏移 142°），损失反而上升，引入梯度裁剪并降低学习率后方可收敛。该现象说明 STN 的几何稳定性需要显式约束，与 §2.6 关于变换退化与回退机制的分析一致。**STN 几何可学性自检（对应报告 §2.5 变换方向验证要求）**
+
+为排除"逆向采样方向写反"这类无法从损失曲线发现的问题，设计了几何自监督实验：用已知矩阵 θ 对端正车牌施加畸变得到输入，仅训练 STN 以像素重构损失还原原图，再检查学到的矩阵与 θ 的逆矩阵是否一致。四组案例结果如下：
+
+| 案例         | 施加           | 理论应学到     | 实际学到       | 角度误差 | MSE（前→后）  |
+| ------------ | -------------- | -------------- | -------------- | -------- | ------------- |
+| 旋转         | +12.00°        | −12.00°        | −11.77°        | 0.23°    | 0.396 → 0.069 |
+| 旋转+缩放    | −8.00°，0.900× | +8.00°，1.111× | +7.56°，1.104× | 0.44°    | 0.373 → 0.117 |
+| 平移         | (0.15, −0.05)  | ≈0°            | 0.03°          | 0.03°    | 0.383 → 0.252 |
+| 透视回补旋转 | +6.00°         | −6.00°         | −5.69°         | 0.31°    | 0.307 → 0.047 |
+
+结论：四组案例学到的变换均为施加矩阵的逆向（符号相反），角度误差均小于 0.5°，确认逆向采样方向实现正确，STN 具备通过损失学习几何矫正的能力。
+
+另需记录两点限制：① 重构误差存在下限，因为畸变会有一部分像素被移出画幅，该部分信息不可恢复，这与 STN 只能"重新组织现有像素"的性质一致；② 训练初期若不加梯度裁剪，位置参数会被推至极端值（实测缩放达 2809 倍、角度偏移 142°），损失反而上升，引入梯度裁剪并降低学习率后方可收敛。该现象说明 STN 的几何稳定性需要显式约束，与 §2.6 关于变换退化与回退机制的分析一致。
+
+# S6 集成（STN + LPRNet 串起来）
+
+S5 完成后，三块零件都有了：**数据（S3）+ 识别（S4）+ 矫正（S5）**。S6 就是把它们串成一条链：
+
+```
+PlateDataset(size=188×48)  →  STN(mode)  →  LPRNet  →  CTC 损失 → 反向传播同时更新两个网络
+```
+
+### 测试：
+
+过拟合检查命令行
+
+```
+.\.venv\Scripts\python.exe -m src.train.train_end2end --manifest data\ccpd_manifest_base\samples.jsonl --mode affine --overfit 24 --epochs 200 --lr 2e-3
+```
+
+全量训练命令行：
+
+```
+.\.venv\Scripts\python.exe -m src.train.train_end2end --manifest data\ccpd_manifest_base\samples.jsonl --mode affine --epochs 60 --batch-size 32 --lr 5e-4 --init outputs\end2end_affine_overfit.pt
+```
+
+# S7交付：评估脚本 + E1 消融主表
+
+### 测试验证：
+
+```
+# ① 测试全绿（预期 Ran 153 tests OK）
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+
+# ② 用手上已有的过拟合权重试跑评估（预期能出表，准确率很低是正常的）
+.\.venv\Scripts\python.exe -m src.eval.evaluate --checkpoint outputs\end2end_affine_overfit.pt --manifest data\ccpd_manifest_base\samples.jsonl --split test
+
+# ③ 试跑消融汇总（预期只有 affine 一行 + 提示 off/perspective 缺权重）
+.\.venv\Scripts\python.exe scripts\run_ablation.py --manifest data\ccpd_manifest_base\samples.jsonl --split test
+```
+
+要跑的训练：
+
+| 步骤                 | 命令                                                         | 时间    |
+| -------------------- | ------------------------------------------------------------ | ------- |
+| ① off 过拟合         | `python -m src.train.train_end2end --manifest data\ccpd_manifest_base\samples.jsonl --mode off --overfit 24 --epochs 200 --lr 2e-3` | ~15 s   |
+| ② off 全量           | `python -m src.train.train_end2end --manifest data\ccpd_manifest_base\samples.jsonl --mode off --epochs 60 --lr 5e-4 --init outputs\end2end_off_overfit.pt` | ~18 min |
+| ③ affine 过拟合      | `... --mode affine --overfit 24 --epochs 200 --lr 2e-3`      | ~25 s   |
+| ④ affine 全量        | `... --mode affine --epochs 60 --lr 5e-4 --init outputs\end2end_affine_overfit.pt` | ~20 min |
+| ⑤ perspective 过拟合 | `... --mode perspective --overfit 24 --epochs 300 --lr 2e-3` | ~36 s   |
+| ⑥ perspective 全量   | `... --mode perspective --epochs 60 --lr 5e-4 --init outputs\end2end_perspective_overfit.pt` | ~22 min |

@@ -84,7 +84,7 @@ def conv_output(size: int, kernel: int, stride: int = 1, padding: int = 0) -> in
 def conv_parameters(
     in_channels: int, out_channels: int, kernel: int, batchnorm: bool = False
 ) -> int:
-    """一个卷积层的参数量（含偏置，可选含 BatchNorm 的 2×通道数）。"""
+    """一个卷积层的参数量（含偏置，可选含 BatchNorm 的 2×通道数）"""
     weights = in_channels * out_channels * kernel * kernel
     bias = out_channels
     norm = 2 * out_channels if batchnorm else 0

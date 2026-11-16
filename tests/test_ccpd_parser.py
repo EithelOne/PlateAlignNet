@@ -23,13 +23,13 @@ from src.data.ccpd_parser import (
     validate_quad,
 )
 
-# 一条格式完整的样例：京A12345，字符索引 12_35_60_61_62_63_64
+# 一条格式完整的样例：京A12345，字符索引 12_0_25_26_27_28_29
 SAMPLE_NAME = (
-    "025-95_113-154&383_386&473-386&473_177&454_154&383_363&402-12_35_60_61_62_63_64-37-15.jpg"
+    "025-95_113-154&383_386&473-386&473_177&454_154&383_363&402-12_0_25_26_27_28_29-37-15.jpg"
 )
 # 新能源 8 位：粤AD12345
 GREEN_NAME = (
-    "050-0_0-154&383_386&473-386&473_177&454_154&383_363&402-19_35_38_60_61_62_63_64-100-5.jpg"
+    "050-0_0-154&383_386&473-386&473_177&454_154&383_363&402-19_0_3_25_26_27_28_29-100-5.jpg"
 )
 
 
@@ -56,14 +56,14 @@ class ParseFilenameTests(unittest.TestCase):
 
     def test_wrong_field_count_raises(self) -> None:
         with self.assertRaises(ParseError):
-            parse_ccpd_filename("025-95_113-154&383_386&473-12_35_60_61_62_63_64-37-15.jpg")
+            parse_ccpd_filename("025-95_113-154&383_386&473-12_0_25_26_27_28_29-37-15.jpg")
 
     def test_bad_suffix_raises(self) -> None:
         with self.assertRaises(ParseError):
             parse_ccpd_filename(SAMPLE_NAME.replace(".jpg", ".bmp"))
 
     def test_index_out_of_range_raises(self) -> None:
-        broken = SAMPLE_NAME.replace("12_35_60_61_62_63_64", "12_35_99_60_61_62_63")
+        broken = SAMPLE_NAME.replace("12_0_25_26_27_28_29", "12_0_99_26_27_28_29")
         with self.assertRaises(ParseError):
             parse_ccpd_filename(broken)
 
@@ -73,7 +73,7 @@ class ParseFilenameTests(unittest.TestCase):
             parse_ccpd_filename(broken)
 
     def test_plate_length_must_be_7_or_8(self) -> None:
-        broken = SAMPLE_NAME.replace("12_35_60_61_62_63_64", "12_35_59_60_61_62")
+        broken = SAMPLE_NAME.replace("12_0_25_26_27_28_29", "12_0_25_26_27_28")
         with self.assertRaises(ParseError):
             parse_ccpd_filename(broken)
 
