@@ -19,7 +19,11 @@ from src.models.lprnet_spec import trace_layers
 from src.utils.plate_charset import BLANK_INDEX, CHARSET
 
 def get_device() -> torch.device:
-    """有 GPU 用 GPU，没有就用 CPU。"""
+    """优先 CUDA，否则 CPU。
+
+    说明：本模型约 10 万参数、批大小 32，Apple MPS 的单算子启动开销反而比 CPU 慢，
+    且 MPS 尚不支持非整除尺寸的 adaptive pooling，故默认不使用 MPS。
+    """
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 

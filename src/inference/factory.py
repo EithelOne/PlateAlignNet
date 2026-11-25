@@ -11,6 +11,7 @@ def create_pipeline(
     checkpoint: Path | str | None = None,
     manifest: Path | str | None = None,
     manual_box: tuple[int, int, int, int] | None = None,
+    detector_weights: Path | str | None = None,
 ) -> PlatePipeline:
     """按名称创建推理流水线"""
     if backend == "demo":
@@ -35,6 +36,27 @@ def create_pipeline(
         )
         return pipeline
 
+    if backend == "detect":
+        # 真实 YOLO 检测 + STN + LPRNet 三阶段级联
+        if checkpoint is None:
+            raise ValueError("detect 后端需要 checkpoint（STN + LPRNet 识别权重）")
+        if detector_weights is None:
+            raise ValueError("detect 后端需要 detector_weights（YOLO 检测权重）")
+        import torch
+
+        from .real_backend import STNRectifier, TorchRecognizer, load_recognizer
+        from .yolo_detector import YoloDetector
+
+        device = torch.device("cpu")
+        model, _info = load_recognizer(checkpoint, device)
+        return PlatePipeline(
+            detector=YoloDetector(detector_weights, device="cpu"),
+            rectifier=STNRectifier(model, device),
+            recognizer=TorchRecognizer(model, device),
+            backend_name="detect-yolov8",
+        )
+
     raise ValueError(
-        f"未知后端 {backend!r}。可用后端：'demo'（启发式占位）、'real'（真实 STN + LPRNet）。"
+        f"未知后端 {backend!r}。可用后端：'demo'（启发式占位）、'real'（真实 STN + LPRNet）、"
+        f"'detect'（YOLOv8 检测 + STN + LPRNet 三阶段级联）。"
     )

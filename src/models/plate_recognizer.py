@@ -27,6 +27,7 @@ class PlateRecognizer(nn.Module):
         mode: RectificationMode | str = RectificationMode.AFFINE,
         input_size: tuple[int, int] = STN_INPUT_SIZE,
         stn_hidden_dim: int = 64,
+        stn_depth: int = 3,
         freeze_stn: bool = False,
     ) -> None:
         super().__init__()
@@ -37,6 +38,7 @@ class PlateRecognizer(nn.Module):
             input_size=input_size,
             output_size=STN_OUTPUT_SIZE,
             hidden_dim=stn_hidden_dim,
+            num_conv_blocks=stn_depth,
         )
         self.lprnet = LPRNet()
         self.freeze_stn = freeze_stn
@@ -85,9 +87,13 @@ def build_recognizer(
     mode: RectificationMode | str = RectificationMode.AFFINE,
     device: torch.device | None = None,
     freeze_stn: bool = False,
+    stn_hidden_dim: int = 64,
+    stn_depth: int = 3,
 ) -> PlateRecognizer:
     """创建组合模型，可选搬到指定设备。"""
-    model = PlateRecognizer(mode=mode, freeze_stn=freeze_stn)
+    model = PlateRecognizer(
+        mode=mode, freeze_stn=freeze_stn, stn_hidden_dim=stn_hidden_dim, stn_depth=stn_depth
+    )
     if device is not None:
         model = model.to(device)
     return model

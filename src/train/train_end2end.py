@@ -134,7 +134,12 @@ def run_overfit(args: argparse.Namespace, device: torch.device) -> dict[str, obj
         size=STN_INPUT_SIZE,
         augment=False,
     )
-    model = build_recognizer(args.mode, device)
+    model = build_recognizer(
+        args.mode, device,
+        freeze_stn=getattr(args, "freeze_stn", False),
+        stn_hidden_dim=getattr(args, "stn_hidden_dim", 64),
+        stn_depth=getattr(args, "stn_depth", 3),
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     info = model.describe()
@@ -209,7 +214,12 @@ def run_training(args: argparse.Namespace, device: torch.device) -> dict[str, ob
     test_set = PlateDataset.from_manifest(args.manifest, split="test", augment=False, **common)
 
    
-    model = build_recognizer(args.mode, device)
+    model = build_recognizer(
+        args.mode, device,
+        freeze_stn=getattr(args, "freeze_stn", False),
+        stn_hidden_dim=getattr(args, "stn_hidden_dim", 64),
+        stn_depth=getattr(args, "stn_depth", 3),
+    )
     if args.init is not None:
         if not Path(args.init).exists():
             raise SystemExit(
@@ -217,8 +227,12 @@ def run_training(args: argparse.Namespace, device: torch.device) -> dict[str, ob
                 f"请先跑过拟合检查生成它：--mode {args.mode} --overfit 24 --epochs 200 --lr 2e-3"
             )
         loaded = torch.load(args.init, map_location=device, weights_only=False)
-        model.load_state_dict(loaded["state_dict"])
-        print(f"已从 {args.init} 加载权重继续训练（warm start）")
+        missing, unexpected = model.load_state_dict(loaded["state_dict"], strict=False)
+        print(f"已从 {args.init} 加载权重继续训练（warm start，strict=False）")
+        if missing:
+            print(f"  未加载（保持当前初始化）的键：{missing}")
+        if unexpected:
+            print(f"  源权重中多余（被忽略）的键：{unexpected}")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(args.epochs, 1))
 
@@ -314,6 +328,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--overfit", type=int, default=0, help=">0 时改为过拟合检查")
     parser.add_argument("--no-augment", action="store_true", help="训练时关闭数据增强（诊断用）")
     parser.add_argument("--init", type=Path, default=None, help="从已有权重继续训练（warm start）")
+    parser.add_argument("--stn-hidden-dim", type=int, default=64, help="定位网络全连接隐藏维（E2 宽度）")
+    parser.add_argument("--stn-depth", type=int, default=3, help="定位网络卷积层数（E2 深度）")
+    parser.add_argument("--freeze-stn", action="store_true", help="冻结 STN，只训练 LPRNet（E4 策略）")
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args(argv)

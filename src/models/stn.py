@@ -34,6 +34,18 @@ NUM_PARAMS: dict[RectificationMode, int] = {
     RectificationMode.PERSPECTIVE: 8,
 }
 
+# 有界残差参数化：定位网络输出 raw，实际使用的 theta = identity + tanh(raw - identity) * bound。
+# 这样 STN 在训练起点严格等于恒等，且无论如何都不可能把比例/平移推到塌缩区。
+# bound 每个分量的含义（归一化坐标 [-1,1]）：
+#   前 4 个 = 2x2 线性部分；非对角项（旋转/剪切）放宽到 ±0.80，允许约 ±53° 旋转，
+#           以覆盖 CCPD rotate(10°~45°)/tilt(10°~60°) 的大角度倾斜；
+#   中间 2 个 = 平移，±0.30；
+#   透视 h31/h32 = 分母项，±0.25 保证分母不塌缩。
+RESIDUAL_BOUNDS: dict[RectificationMode, tuple[float, ...]] = {
+    RectificationMode.AFFINE: (0.35, 0.80, 0.30, 0.80, 0.35, 0.30),
+    RectificationMode.PERSPECTIVE: (0.35, 0.80, 0.30, 0.80, 0.35, 0.30, 0.25, 0.25),
+}
+
 @dataclass(frozen=True)
 class RectifyStats:
     """一次矫正的几何统计，用来监控"STN 是否在乱来"。"""
@@ -51,48 +63,94 @@ def _conv_block(in_channels: int, out_channels: int) -> nn.Sequential:
         nn.ReLU(inplace=True),
     )
 
+
+def _conv_channels(depth: int) -> list[int]:
+    """按卷积层数给出各层输出通道：16 / 32 / 64 / 64 / ..."""
+    if depth < 1:
+        raise ValueError(f"卷积层数应 >= 1，收到 {depth}")
+    base = [16, 32, 64]
+    if depth <= len(base):
+        return base[:depth]
+    return base + [64] * (depth - len(base))
+
+
 class LocalizationNet(nn.Module):
-    """定位网络：三层卷积（16/32/64/）+自适应池化+两层全连接"""
+    """定位网络：可配置层数的卷积（16/32/64/...）+ 池化 + 两层全连接。
+
+    num_conv_blocks 控制卷积块数（E2 深度消融用）；hidden_dim 控制全连接宽度（E2 宽度消融用）。
+    默认 3 层卷积 + 64 维隐藏层，与既有 E1 权重完全一致。
+    """
     def __init__(
         self,
         num_params: int = 6,
         hidden_dim: int = 64,
         pool_size: tuple[int, int] = (2, 4),
         identity: tuple[float, ...] | None = None,
+        residual_bounds: tuple[float, ...] | None = None,
+        num_conv_blocks: int = 3,
     ) -> None:
         super().__init__()
-        self.features = nn.Sequential(
-            _conv_block(3, 16),
-            nn.MaxPool2d(2, 2),
-            _conv_block(16, 32),
-            nn.MaxPool2d(2, 2),
-            _conv_block(32, 64),
-            nn.MaxPool2d(2, 2),
-        )
-        self.pool = nn.AdaptiveAvgPool2d(pool_size)
-        flattened = 64 * pool_size[0] * pool_size[1]
+        self.num_conv_blocks = int(num_conv_blocks)
+        channels = _conv_channels(self.num_conv_blocks)
+
+        modules: list[nn.Module] = []
+        in_channels = 3
+        for out_channels in channels:
+            modules.append(_conv_block(in_channels, out_channels))
+            modules.append(nn.MaxPool2d(2, 2))
+            in_channels = out_channels
+        self.features = nn.Sequential(*modules)
+        final_channels = channels[-1]
+
+        # 3 层卷积时特征图固定为 64×6×23：沿用「右侧补 1 列 + 固定平均池化」保持与既有 E1
+        # 权重逐位一致（也兼容 MPS）。其它层数用自适应池化，因为特征图尺寸随层数变化。
+        if self.num_conv_blocks == 3:
+            self.pool: nn.Module = nn.Sequential(
+                nn.ReflectionPad2d((0, 1, 0, 0)),  # 宽度 23 -> 24
+                nn.AvgPool2d(kernel_size=(3, 6), stride=(3, 6)),
+            )
+        else:
+            self.pool = nn.AdaptiveAvgPool2d(pool_size)
+        flattened = final_channels * pool_size[0] * pool_size[1]
         self.fc1 = nn.Linear(flattened, hidden_dim)
         self.act = nn.ReLU(inplace=True)
         self.fc2 = nn.Linear(hidden_dim, num_params)
         self.num_params = num_params
+        self.identity: tuple[float, ...] | None = None
+        self.residual_bounds: tuple[float, ...] | None = None
+        if residual_bounds is not None:
+            if len(residual_bounds) != num_params:
+                raise ValueError(
+                    f"residual_bounds 应有 {num_params} 个，收到 {len(residual_bounds)} 个"
+                )
+            self.residual_bounds = tuple(float(b) for b in residual_bounds)
         self.reset_identity(identity)
 
     def reset_identity(self, identity: tuple[float, ...] | None = None) -> None:
         """恒等初始化：输出层权重清零、偏置设为恒等参数"""
+        if identity is not None:
+            if len(identity) != self.num_params:
+                raise ValueError(f"恒等参数应有 {self.num_params} 个，收到 {len(identity)} 个")
+            self.identity = tuple(float(v) for v in identity)
         with torch.no_grad():
             self.fc2.weight.zero_()
             self.fc2.bias.zero_()
-            if identity is not None:
-                if len(identity) != self.num_params:
-                    raise ValueError(f"恒等参数应有 {self.num_params} 个，收到 {len(identity)} 个")
-                self.fc2.bias.copy_(torch.tensor(identity, dtype=self.fc2.bias.dtype))
+            if self.identity is not None:
+                self.fc2.bias.copy_(
+                    torch.tensor(self.identity, dtype=self.fc2.bias.dtype)
+                )
 
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         features = self.features(images)
         pooled = self.pool(features).flatten(1)
         hidden = self.act(self.fc1(pooled))
-        return self.fc2(hidden)
+        raw = self.fc2(hidden)
+        if self.residual_bounds is not None and self.identity is not None:
+            identity = torch.tensor(self.identity, dtype=raw.dtype, device=raw.device)
+            bounds = torch.tensor(self.residual_bounds, dtype=raw.dtype, device=raw.device)
+            raw = identity + torch.tanh(raw - identity) * bounds
+        return raw
 
 
 def identity_grid(
@@ -120,6 +178,8 @@ class STN(nn.Module):
         output_size: tuple[int, int] = STN_OUTPUT_SIZE,
         hidden_dim: int = 64,
         pool_size: tuple[int, int] = (2, 4),
+        residual_bounds: tuple[float, ...] | None = None,
+        num_conv_blocks: int = 3,
     ) -> None:
         super().__init__()
         self.mode = RectificationMode(mode)
@@ -128,11 +188,14 @@ class STN(nn.Module):
         self.localization: LocalizationNet | None = None
         if self.mode is not RectificationMode.OFF:
             count = NUM_PARAMS[self.mode]
+            bounds = RESIDUAL_BOUNDS[self.mode] if residual_bounds is None else residual_bounds
             self.localization = LocalizationNet(
                 num_params=count,
                 hidden_dim=hidden_dim,
                 pool_size=pool_size,
                 identity=IDENTITY_PARAMS[self.mode],
+                residual_bounds=bounds,
+                num_conv_blocks=num_conv_blocks,
             )
 
     @property
@@ -294,21 +357,28 @@ def main() -> int:
         )
     print(f"最大绝对误差 = {float((off_out - baseline).abs().max()):.3e}（应为 0）")
 
-    print("\n=== 4) 透视：正常参数 vs 极端参数（触发回退） ===")
+    print("\n=== 4) 透视：有界残差 vs 无界（触发回退） ===")
     perspective = STN(RectificationMode.PERSPECTIVE)
     with torch.no_grad():
         normal_out, normal_stats = perspective(sample, return_stats=True)
         print(f"恒等初始化 stats = {normal_stats}")
         extreme = (1.0, 0.0, 5.0, 0.0, 1.0, 5.0, 0.0, 0.0)
         perspective.localization.fc2.bias.copy_(torch.tensor(extreme))
-        extreme_out, extreme_stats = perspective(sample, return_stats=True)
-        print(f"极端平移  stats = {extreme_stats}")
-        print(f"极端情况下是否出现 nan：{bool(torch.isnan(extreme_out).any())}")
-        identity = identity_grid(2, *perspective.output_hw)
+        bounded_out, bounded_stats = perspective(sample, return_stats=True)
+        print(f"极端平移（有界残差） stats = {bounded_stats}")
+        print(f"有界残差下是否出现 nan：{bool(torch.isnan(bounded_out).any())}（应为 False）")
+
+    # 无界 STN 才允许触发回退，用来验证安全网本身仍可用。
+    unbounded = STN(RectificationMode.PERSPECTIVE, residual_bounds=(2.0,) * 8)
+    with torch.no_grad():
+        unbounded.localization.fc2.bias.copy_(torch.tensor(extreme))
+        extreme_out, extreme_stats = unbounded(sample, return_stats=True)
+        print(f"极端平移（无界） stats = {extreme_stats}")
+        identity = identity_grid(2, *unbounded.output_hw)
         reference = F.grid_sample(
             sample, identity, align_corners=ALIGN_CORNERS, padding_mode=PADDING_MODE
         )
-        print(f"回退后与恒等变换的最大误差 = {float((extreme_out - reference).abs().max()):.3e}")
+        print(f"回退后与恒等变换的最大误差 = {float((extreme_out - reference).abs().max()):.3e}（应 ≈ 0）")
     return 0
 
 

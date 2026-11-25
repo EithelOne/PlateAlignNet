@@ -68,7 +68,9 @@ def augment_plate(image: Image.Image, rng: random.Random) -> Image.Image:
     result = image.convert("RGB")
     result = ImageEnhance.Brightness(result).enhance(rng.uniform(0.7, 1.3))
     result = ImageEnhance.Contrast(result).enhance(rng.uniform(0.8, 1.2))
-    angle = rng.uniform(-15.0, 15.0)
+    # 大角度旋转增强：覆盖 CCPD rotate 子集（10°~45°）的倾斜范围，
+    # 让 LPRNet 与 STN 在训练中见过旋转车牌，从而能泛化到挑战子集。
+    angle = rng.uniform(-45.0, 45.0)
     if abs(angle) > 1.0:
         result = result.rotate(
             angle, resample=Image.Resampling.BILINEAR, expand=False, fillcolor=(0, 0, 0)
