@@ -123,8 +123,12 @@ class OffModeTests(unittest.TestCase):
 
 class PerspectiveSafetyTests(unittest.TestCase):
     def test_extreme_translation_triggers_fallback(self) -> None:
-        """把位置参数推到离谱的值，越界点会超过一半 → 必须整体回退成恒等变换。"""
-        stn = STN(RectificationMode.PERSPECTIVE)
+        """把位置参数推到离谱的值，越界点会超过一半 → 必须整体回退成恒等变换。
+
+        默认 STN 使用有界残差，极端 bias 会被夹到安全范围、不再触发回退；
+        这里改用大 bound 的无界 STN 来单独验证回退安全网本身仍可用。
+        """
+        stn = STN(RectificationMode.PERSPECTIVE, residual_bounds=(2.0,) * 8)
         sample = _random_batch(2)
         with torch.no_grad():
             stn.localization.fc2.bias.copy_(
